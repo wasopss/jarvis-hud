@@ -666,6 +666,11 @@ async function speak(text, { log: doLog = true, keepGen = false } = {}) {
     if (i + 1 < parts.length) setState('thinking');
   }
   setState(listening ? 'listening' : 'idle');
+  // modo conversa: depois de responder, o Jarvis segue ouvindo ~11s para o senhor emendar sem dizer "Jarvis"
+  if (doLog && listening && !document.body.classList.contains('presence')) {
+    armedUntil = Date.now() + 11000;
+    showHeard('pode continuar, senhor…', true);
+  }
   if (run && run === TR.run && !run.multi) trFinish();
   return true;
 }

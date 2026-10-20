@@ -553,11 +553,27 @@ async function brainContext() {
   const b = st?.briefing || {};
   const brief = [...(b.noticias || []), ...(b.regulacao || []), ...(b.oportunidades || [])].slice(0, 10).map((x) => `- ${x}`).join('\n') || '- (sem briefing hoje)';
   const hist = HISTORY.slice(-6).map((h) => `Senhor: ${h.q}\nJarvis: ${h.a}`).join('\n') || '(início da conversa)';
+  // contexto ao vivo: clima, manchetes do momento, e-mails, o dia e o sistema
+  const wx = await weather().catch(() => null);
+  const clima = wx ? `${wx.place}: ${Math.round(wx.temp)}°C, ${wx.desc}, máx ${Math.round(wx.max)}° / mín ${Math.round(wx.min)}°, chance de chuva ${wx.rain}%.` : 'indisponível';
+  const nw = await news().catch(() => ({}));
+  const manchetes = Object.entries(nw).flatMap(([k, items]) => (items || []).slice(0, 2).map((n) => `- [${k}] ${n.title}`)).slice(0, 8).join('\n') || '- (sem manchetes agora)';
+  const emails = (st?.emails?.agir || st?.emails?.acao || st?.emails || null);
+  const mailTxt = Array.isArray(emails) && emails.length ? emails.slice(0, 5).map((e) => `- ${e.assunto || e.titulo || e.subject || e}${e.de || e.remetente ? ' — ' + (e.de || e.remetente) : ''}`).join('\n') : '- (nada pedindo ação)';
+  const prio = (st?.prioridades || []).map((x) => `- ${x}`).join('\n') || '- (nenhuma definida)';
+  const inboxN = st?.inbox?.length || 0, tasksN = (st?.tasks?.length || 0) + (st?.projects?.ativos?.length || 0);
+  const tel = await telemetry().catch(() => null);
+  const sistema = tel ? `CPU ${tel.cpu}%, memória ${tel.mem}%${tel.battery ? `, bateria ${tel.battery.pct}% (${tel.battery.state})` : ''}, ligado há ${tel.uptimeH}h, rede ${tel.net ? 'online' : 'offline'}.` : 'indisponível';
   return [persona,
-    `## Hoje\n${new Date().toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' })}`,
-    `## Memória\n${mem}`,
+    `## Agora\n${new Date().toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' })}`,
+    `## Memória do senhor\n${mem}`,
+    `## Seu dia\nPrioridades:\n${prio}\nInbox: ${inboxN} item(ns). Tarefas e projetos ativos: ${tasksN}.`,
+    `## E-mails que pedem ação (triagem do Gmail)\n${mailTxt}`,
     `## Mercado agora (Yahoo Finance, última cotação ${mktWhen})\n${mkt}`,
+    `## Clima agora\n${clima}`,
+    `## Manchetes do setor agora\n${manchetes}`,
     `## Briefing do dia (${st?.dailyFile || 'nenhum'})\n${brief}`,
+    `## Sistema do senhor\n${sistema}`,
     `## Conversa recente\n${hist}`].join('\n\n');
 }
 

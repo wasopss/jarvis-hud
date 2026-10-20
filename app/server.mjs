@@ -189,6 +189,20 @@ const news = async () => cached('news', 15 * 60e3, async () => {
 
 // ---------- voz ----------
 const run = (cmd, args, timeout) => new Promise((ok, fail) => execFile(cmd, args, { timeout }, (e) => (e ? fail(e) : ok())));
+// ---------- multiplataforma (macOS, Windows, Linux) ----------
+const MAC = process.platform === 'darwin', WIN = process.platform === 'win32';
+// abre um site ou arquivo no app padrão (ou num app específico, só no Mac)
+function openExternal(target, app) {
+  if (MAC) return run('open', app ? ['-a', app, target] : [target], 10000);
+  if (WIN) return run('cmd', ['/c', 'start', '', target], 10000);
+  return run('xdg-open', [target], 10000);
+}
+// mostra o arquivo na pasta (Finder / Explorer)
+function revealInFolder(file) {
+  if (MAC) return run('open', ['-R', file], 10000);
+  if (WIN) return run('explorer', ['/select,', file.replace(/\//g, String.fromCharCode(92))], 10000).catch(() => {});
+  return run('xdg-open', path.dirname(file) ? [path.dirname(file)] : [file], 10000).catch(() => {});
+}
 
 // A voz em uso vem de tools/speak.mjs: o perfil clonado só entra com autorização registrada no VoiceStudio.
 let activePid = undefined;
@@ -334,6 +348,7 @@ async function findContact(name, kind) {
     const v = kind === 'phone' ? c.whatsapp || c.phone : c.email;
     if (v && fold(n) === want) return { found: [{ name: n, value: v }] };
   }
+  if (!MAC) return { found: [], error: 'contatos do sistema indisponíveis' }; // Windows/Linux: use atalhos em data/contatos.json
   const script = `on run argv
   set q to item 1 of argv
   set k to item 2 of argv
@@ -372,17 +387,20 @@ async function sendEmail(to, subject, text) {
   end tell
   return "enviado"
 end run`;
-  const r = await osaArgs(script, [to, subject, text], 45000);
-  if (r.ok && r.out === 'enviado') return { sent: true, via: 'Mail' };
-  if (r.ok && r.out === 'sem-conta') await osaArgs('tell application "Mail" to quit', []);
-  // 2) reserva: rascunho pronto no Gmail, no Chrome; o senhor só clica em Enviar
+  if (MAC) {
+    const r = await osaArgs(script, [to, subject, text], 45000);
+    if (r.ok && r.out === 'enviado') return { sent: true, via: 'Mail' };
+    if (r.ok && r.out === 'sem-conta') await osaArgs('tell application "Mail" to quit', []);
+  }
+  // reserva (e padrão no Windows/Linux): rascunho pronto no Gmail, no navegador; o senhor só clica em Enviar
   const u = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-  await run('open', ['-a', 'Google Chrome', u], 10000).catch(() => run('open', [u], 10000));
-  return { sent: false, via: 'Gmail', draft: true, reason: r.ok ? 'Mail sem conta' : 'Mail indisponível' };
+  await openExternal(u);
+  return { sent: false, via: 'Gmail', draft: true, reason: MAC ? 'Mail sem conta' : 'sistema sem Mail do Mac' };
 }
 async function sendWhatsApp(digits, text) {
   if (digits.length <= 11) digits = '55' + digits; // número brasileiro sem DDI
-  await run('open', [`whatsapp://send?phone=${digits}&text=${encodeURIComponent(text)}`], 10000);
+  await openExternal(`whatsapp://send?phone=${digits}&text=${encodeURIComponent(text)}`);
+  if (!MAC) return { sent: false, via: 'WhatsApp', prefilled: true, reason: 'sistema sem envio automático' };
   await new Promise((r) => setTimeout(r, 3500)); // o WhatsApp abre a conversa com o texto já escrito
   const r = await osaArgs(`tell application "WhatsApp" to activate
 delay 0.6
@@ -445,7 +463,7 @@ let appIndex = null;
 async function apps() {
   if (appIndex) return appIndex;
   const found = new Map();
-  for (const d of APP_DIRS) {
+  if (MAC) for (const d of APP_DIRS) {
     for (const f of await readdir(d).catch(() => [])) if (f.endsWith('.app')) found.set(f.slice(0, -4), path.join(d, f));
   }
   appIndex = found;
@@ -456,20 +474,29 @@ async function resolveApp(name) {
   const all = await apps();
   const n = fold(name).replace(/^(o|a|os|as)\s+/, '').replace(/[.!?]$/, '');
   const alias = APP_ALIASES[n];
-  if (alias && all.has(alias)) return alias;
+  if (alias && (!MAC || all.has(alias))) return alias;
+  if (!MAC) return name.replace(/^(o|a|os|as)\s+/i, '').replace(/[.!?]$/, '').trim() || null; // Windows/Linux: abre pelo nome dito
   const names = [...all.keys()];
   return names.find((a) => fold(a) === n) || names.find((a) => fold(a).startsWith(n)) || names.find((a) => n.length >= 3 && fold(a).includes(n)) || null;
 }
 const osa = (script) => new Promise((ok) => execFile('osascript', ['-e', script], { timeout: 15000 }, (e, out = '') => ok(e ? null : out.trim())));
-const isRunning = async (app) => (await osa(`application "${app.replace(/"/g, '')}" is running`)) === 'true';
+const exeName = (app) => (/\.exe$/i.test(app) ? app : app + '.exe');
+async function isRunning(app) {
+  if (MAC) return (await osa(`application "${app.replace(/"/g, '')}" is running`)) === 'true';
+  if (WIN) { const out = await new Promise((ok) => execFile('tasklist', ['/FI', `IMAGENAME eq ${exeName(app)}`], { timeout: 8000 }, (e, o = '') => ok(o))); return out.toLowerCase().includes(exeName(app).toLowerCase()); }
+  const out = await new Promise((ok) => execFile('pgrep', ['-fi', app], { timeout: 8000 }, (e, o = '') => ok(o))); return !!out.trim();
+}
 async function openApp(app) {
-  const all = await apps();
-  await new Promise((ok, fail) => execFile('open', ['-a', all.get(app)], { timeout: 15000 }, (e) => (e ? fail(e) : ok())));
+  if (MAC) { const all = await apps(); await new Promise((ok, fail) => execFile('open', ['-a', all.get(app) || app], { timeout: 15000 }, (e) => (e ? fail(e) : ok()))); return; }
+  if (WIN) { await run('cmd', ['/c', 'start', '', app], 12000); return; } // abre pelo nome/registro do Windows
+  await run('xdg-open', [app], 12000).catch(() => run(app.toLowerCase(), [], 12000));
 }
 async function closeApp(app) {
   if (PROTECTED.includes(app)) throw new Error(`${app} é protegido`);
   if (!(await isRunning(app))) return false;
-  await osa(`tell application "${app.replace(/"/g, '')}" to quit`); // fechamento normal: o app pede para salvar se precisar
+  if (MAC) await osa(`tell application "${app.replace(/"/g, '')}" to quit`); // fechamento normal: pede para salvar se precisar
+  else if (WIN) await run('taskkill', ['/IM', exeName(app)], 8000).catch(() => {}); // sem /F: fecha a janela normalmente
+  else await run('pkill', ['-fi', app], 8000).catch(() => {});
   return true;
 }
 
@@ -493,6 +520,7 @@ async function modePlan(id) {
 
 // ---------- leitura de tela (captura + OCR local) ----------
 async function readScreen() {
+  if (!MAC) { const e = new Error('leitura de tela disponível só no macOS por enquanto'); e.unsupported = true; throw e; }
   const png = path.join(os.tmpdir(), `jarvis-tela-${Date.now()}.png`);
   try {
     await new Promise((ok, fail) => execFile('screencapture', ['-x', '-m', png], { timeout: 15000 }, (e, _o, err) => (e ? fail(new Error(String(err || e.message).trim())) : ok())));
@@ -553,12 +581,14 @@ async function absorbMemories(text) {
 async function brainBin() {
   const { brain } = await config();
   if (brain?.bin && existsSync(brain.bin)) return brain.bin;
-  const base = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude-code');
+  // macOS e Windows guardam o Claude Code em lugares diferentes
+  const base = MAC ? path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude-code')
+    : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Claude', 'claude-code');
   const versions = (await readdir(base).catch(() => [])).filter((v) => /^\d+\.\d+\.\d+$/.test(v))
     .sort((a, b) => a.split('.').map(Number).reduce((r, x, i) => r || x - b.split('.').map(Number)[i], 0));
   for (const v of versions.reverse()) {
     for (const h of await readdir(path.join(base, v)).catch(() => [])) {
-      const bin = path.join(base, v, h, 'claude.app', 'Contents', 'MacOS', 'claude');
+      const bin = MAC ? path.join(base, v, h, 'claude.app', 'Contents', 'MacOS', 'claude') : path.join(base, v, h, 'claude.exe');
       if (existsSync(bin)) return bin;
     }
   }
@@ -863,7 +893,7 @@ http.createServer(async (req, res) => {
       const { url: u } = await body(req);
       let host = ''; try { host = new URL(u).hostname.replace(/^www\./, ''); } catch {}
       if (!SOCIAL_HOSTS.some((h) => host === h || host.endsWith('.' + h))) return send(res, 400, { error: 'site não permitido' });
-      await run('open', ['-a', 'Google Chrome', u], 10000).catch(() => run('open', [u], 10000));
+      await openExternal(u);
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/clipboard') {
@@ -878,7 +908,7 @@ http.createServer(async (req, res) => {
       const files = (await readdir(dir).catch(() => [])).filter((f) => /\.(mp4|mov)$/i.test(f) && !/rascunho|sem-limpeza/i.test(f));
       if (!files.length) return send(res, 404, { error: 'nenhum vídeo em video/saida' });
       const newest = files.map((f) => ({ f, t: fsSync.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0].f;
-      await run('open', ['-R', path.join(dir, newest)], 10000);
+      await revealInFolder(path.join(dir, newest));
       return send(res, 200, { ok: true, file: newest });
     }
     send(res, 404, { error: 'não encontrado' });

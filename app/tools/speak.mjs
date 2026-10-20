@@ -3,6 +3,7 @@
 //       import { synth, resolveVoice } from './speak.mjs'
 import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,11 +54,14 @@ export async function resolveVoice(v) {
 }
 
 // Masterização (tools/master): EQ de voz, compressor, loudness em LUFS e limitador. Se falhar, mantém o original.
+const MASTER_BIN = path.join(APP, 'tools', process.platform === 'win32' ? 'master.exe' : 'master');
 export function masterFile(inPath, outPath, { lufs = -16, stereo = true, onlyDenoise = false } = {}) {
+  // sem o binário (Windows, ou Mac sem compilar) a masterização é pulada: a voz toca sem polimento
+  if (!existsSync(MASTER_BIN)) return Promise.resolve(null);
   const args = [inPath, outPath, '--lufs', String(lufs)];
   if (stereo) args.push('--stereo');
   if (onlyDenoise) args.push('--so-ruido'); // só tira o ruído (para áudios já masterizados)
-  return new Promise((ok) => execFile(path.join(APP, 'tools', 'master'), args, { timeout: 60000 }, (e, out) => ok(e ? null : String(out).trim())));
+  return new Promise((ok) => execFile(MASTER_BIN, args, { timeout: 60000 }, (e, out) => ok(e ? null : String(out).trim())));
 }
 export async function masterInPlace(file, opts) {
   const tmp = file + '.m.wav';
@@ -93,7 +97,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const out = path.join(tmpdir(), `jarvis-fala-${Date.now()}.wav`);
   try {
     await synth(text, out);
-    await new Promise((ok) => execFile('afplay', [out], ok));
+    const play = process.platform === 'darwin' ? ['afplay', [out]]
+      : process.platform === 'win32' ? ['powershell', ['-c', `(New-Object Media.SoundPlayer '${out}').PlaySync()`]]
+      : ['aplay', [out]];
+    await new Promise((ok) => execFile(play[0], play[1], ok));
   } catch (e) {
     // sem voz disponível: não troca de voz, apenas mostra o texto
     console.log(`[Jarvis] ${text}`);

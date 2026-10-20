@@ -6,7 +6,7 @@
 <title>Jarvis · Central</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@500;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #02060d; --bg2: #061120; --panel: #06101dcc; --line: #0f2740; --line2: #17406a;
@@ -16,6 +16,7 @@
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
     --sans: "Inter", -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
     --display: "Rajdhani", "Inter", -apple-system, sans-serif;
+    --tech: "Orbitron", "Rajdhani", -apple-system, sans-serif; /* nome JARVIS, bem tecnológica */
   }
   * { box-sizing: border-box; }
   /* números alinhados e estáveis quando o valor muda ao vivo */
@@ -60,7 +61,7 @@
   /* ---------- topo ---------- */
   header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 22px; padding: 10px 22px;
            border-bottom: 1px solid var(--line); background: #02060dd9; backdrop-filter: blur(12px); }
-  .brand { font: 700 19px var(--display); letter-spacing: .52em; color: var(--cyan); text-shadow: 0 0 12px var(--glow); position: relative; animation: brandglow 4.5s ease-in-out infinite; }
+  .brand { font: 700 17px var(--tech); letter-spacing: .4em; color: var(--cyan); text-shadow: 0 0 12px var(--glow); position: relative; animation: brandglow 4.5s ease-in-out infinite; }
   @keyframes brandglow { 0%, 100% { text-shadow: 0 0 10px var(--glow); } 50% { text-shadow: 0 0 20px var(--cyan), 0 0 34px var(--glow); } }
   .brand::after { content: attr(data-t); position: absolute; left: 2px; top: 0; color: var(--blue); opacity: .0; animation: glitch 7s infinite steps(1); }
   @keyframes glitch { 0%, 96% { opacity: 0; transform: none; } 97% { opacity: .8; transform: translate(-2px, 1px); } 98% { opacity: .6; transform: translate(2px, -1px); } }
@@ -224,7 +225,7 @@
   #boot.hide { opacity: 0; pointer-events: none; }
   #boot .inner { width: min(460px, 88vw); font: 12px/1.9 var(--mono); color: var(--dim); }
   #boot .inner { text-align: center; }
-  #boot .title { font: 700 34px var(--display); letter-spacing: .58em; color: var(--cyan); text-shadow: 0 0 16px var(--glow); margin: 4px 0 2px; animation: brandglow 4.5s ease-in-out infinite; }
+  #boot .title { font: 800 30px var(--tech); letter-spacing: .42em; color: var(--cyan); text-shadow: 0 0 16px var(--glow); margin: 4px 0 2px; animation: brandglow 4.5s ease-in-out infinite; }
   #boot .subtitle { font: 500 9.5px var(--mono); letter-spacing: .34em; color: var(--dim); text-transform: uppercase; margin-bottom: 18px; }
   #boot #bootlines { text-align: left; min-height: 120px; }
   #boot .prog { height: 2px; background: var(--line); margin: 14px 0; overflow: hidden; position: relative; }
@@ -246,7 +247,7 @@
   .spin-cw-fast { transform-origin: 100px 100px; animation: spin 3.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes corepulse { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
-  #boot .r-label { position: absolute; inset: 0; display: grid; place-items: center; font: 700 12px var(--mono); letter-spacing: .18em; color: #eafbff; text-shadow: 0 0 10px var(--cyan); }
+  #boot .r-label { position: absolute; inset: 0; display: grid; place-items: center; font: 700 11px var(--tech); letter-spacing: .18em; color: #eafbff; text-shadow: 0 0 10px var(--cyan); }
   /* botão de ativar pulsante */
   #boot .go { margin: 18px auto 0; display: inline-flex; align-items: center; gap: 10px; background: #0a1c33; color: var(--cyan);
     border: 1px solid var(--line2); border-radius: 999px; padding: 11px 24px; font: 700 11px var(--mono); letter-spacing: .28em; cursor: pointer;
@@ -1370,24 +1371,53 @@ function renderCommands() {
 
 
 /* =================== sons da interface (sintetizados) =================== */
+// Efeitos de interface sintetizados na hora (estilo Homem de Ferro): power-up, servos, bips de HUD.
+// Tudo gerado por osciladores e ruído filtrado — som original, sem áudio de filme.
 function sfx(kind) {
   if (!A.ctx || !soundOn) return;
   const t0 = A.ctx.currentTime, out = A.ctx.createGain();
   out.gain.value = 0.12; out.connect(A.ctx.destination);
-  const tone = (f, at, dur, type = 'sine', f2 = null) => {
+  const tone = (f, at, dur, type = 'sine', f2 = null, peak = 1) => {
     const o = A.ctx.createOscillator(), g = A.ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t0 + at);
     if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + at + dur);
     g.gain.setValueAtTime(0.0001, t0 + at);
-    g.gain.exponentialRampToValueAtTime(1, t0 + at + 0.012);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
     o.connect(g); g.connect(out); o.start(t0 + at); o.stop(t0 + at + dur + 0.02);
   };
+  // sopro/servo: ruído filtrado que varre a frequência (whoosh)
+  const whoosh = (at, dur, f1, f2, peak = 0.5, q = 6) => {
+    const n = Math.round(A.ctx.sampleRate * dur), buf = A.ctx.createBuffer(1, n, A.ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = A.ctx.createBufferSource(); s.buffer = buf;
+    const bp = A.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q;
+    bp.frequency.setValueAtTime(f1, t0 + at); bp.frequency.exponentialRampToValueAtTime(f2, t0 + at + dur);
+    const g = A.ctx.createGain(); g.gain.setValueAtTime(peak, t0 + at); g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+    s.connect(bp); bp.connect(g); g.connect(out); s.start(t0 + at); s.stop(t0 + at + dur + 0.02);
+  };
   if (kind === 'wake') { tone(660, 0, 0.09); tone(990, 0.1, 0.14); }
-  else if (kind === 'listen') tone(1180, 0, 0.12, 'sine', 1500);
+  else if (kind === 'listen') { tone(1180, 0, 0.12, 'sine', 1500); whoosh(0, 0.18, 600, 2200, 0.25); }
   else if (kind === 'tick') tone(2200, 0, 0.04, 'triangle');
-  else if (kind === 'done') { tone(880, 0, 0.12); tone(1320, 0.11, 0.22); }
+  else if (kind === 'done') { tone(880, 0, 0.12); tone(1320, 0.11, 0.22); tone(1760, 0.2, 0.16, 'sine', null, 0.5); }
   else if (kind === 'error') { tone(220, 0, 0.18, 'sawtooth', 160); tone(180, 0.2, 0.22, 'sawtooth', 120); }
+  else if (kind === 'boot') {
+    // sequência de power-up do reator: varredura grave subindo, servos, acorde cristalino e bip de "pronto"
+    const sweep = A.ctx.createOscillator(), sg = A.ctx.createGain(), lp = A.ctx.createBiquadFilter();
+    sweep.type = 'sawtooth'; lp.type = 'lowpass'; lp.Q.value = 8;
+    sweep.frequency.setValueAtTime(55, t0); sweep.frequency.exponentialRampToValueAtTime(220, t0 + 1.1);
+    lp.frequency.setValueAtTime(200, t0); lp.frequency.exponentialRampToValueAtTime(5200, t0 + 1.2);
+    sg.gain.setValueAtTime(0.0001, t0); sg.gain.exponentialRampToValueAtTime(0.5, t0 + 0.5); sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.5);
+    sweep.connect(lp); lp.connect(sg); sg.connect(out); sweep.start(t0); sweep.stop(t0 + 1.55);
+    whoosh(0.0, 0.5, 300, 3000, 0.35);   // energia carregando
+    whoosh(0.5, 0.35, 1800, 400, 0.3);   // servo baixando
+    whoosh(0.85, 0.4, 500, 4000, 0.3);   // placas travando
+    // acorde cristalino ascendente (power on)
+    [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.9 + i * 0.07, 0.6 - i * 0.05, 'triangle', null, 0.5));
+    tone(1760, 1.4, 0.18, 'sine', null, 0.5); // bip "online"
+    // zumbido grave contínuo do reator (curto)
+    tone(70, 0.2, 1.3, 'sine', 72, 0.4);
+  }
 }
 
 /* =================== música de abertura (uma vez por abertura) =================== */
@@ -1989,6 +2019,7 @@ let booted = false;
 async function boot() {
   if (booted) return; booted = true;
   initAudio();
+  sfx('boot'); // power-up do reator ao ativar
   $('boot').classList.add('hide');
   playOpening();
   // comandos de voz sempre prontos: o microfone liga sozinho ao abrir a central (?mic=0 desliga)

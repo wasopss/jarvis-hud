@@ -107,8 +107,11 @@ async function state() {
     },
     prioridades: bullets(d['Prioridades do dia (1–3)']).filter((x) => !x.startsWith('_')),
     emails, // triagem do Gmail feita pelo Claude (somente leitura), em data/emails.json
+    build: buildId(), // muda quando o index.html é editado: a central recarrega sozinha
   };
 }
+// versão da central: data de modificação do index.html (não precisa recarregar à mão)
+function buildId() { try { return String(Math.round(fsSync.statSync(path.join(APP, 'public', 'index.html')).mtimeMs)); } catch { return '0'; } }
 
 // ---------- dados ao vivo (com cache em memória) ----------
 const memo = new Map();

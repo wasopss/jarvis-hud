@@ -220,14 +220,41 @@
   @keyframes popout { to { opacity: 0; transform: translateY(-10px) scale(.96); filter: blur(4px); } }
 
   /* ---------- inicialização ---------- */
-  #boot { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--bg); cursor: pointer; transition: opacity .9s; }
+  #boot { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: var(--bg); cursor: pointer; transition: opacity .9s; }
   #boot.hide { opacity: 0; pointer-events: none; }
   #boot .inner { width: min(460px, 88vw); font: 12px/1.9 var(--mono); color: var(--dim); }
-  #boot .title { font: 700 32px var(--display); letter-spacing: .58em; color: var(--cyan); text-shadow: 0 0 16px var(--glow); margin-bottom: 18px; }
-  #boot .prog { height: 2px; background: var(--line); margin: 14px 0; overflow: hidden; }
-  #boot .prog i { display: block; height: 100%; width: 0; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); transition: width .25s; }
-  #boot .go { margin-top: 16px; color: var(--cyan); letter-spacing: .3em; animation: blink 1.6s infinite; }
+  #boot .inner { text-align: center; }
+  #boot .title { font: 700 34px var(--display); letter-spacing: .58em; color: var(--cyan); text-shadow: 0 0 16px var(--glow); margin: 4px 0 2px; animation: brandglow 4.5s ease-in-out infinite; }
+  #boot .subtitle { font: 500 9.5px var(--mono); letter-spacing: .34em; color: var(--dim); text-transform: uppercase; margin-bottom: 18px; }
+  #boot #bootlines { text-align: left; min-height: 120px; }
+  #boot .prog { height: 2px; background: var(--line); margin: 14px 0; overflow: hidden; position: relative; }
+  #boot .prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--cyan)); box-shadow: 0 0 12px var(--cyan); transition: width .25s; }
   #boot .ok { color: var(--up); }
+  /* reator: núcleo com anéis girando */
+  #boot .reactor { position: relative; width: 180px; height: 180px; margin: 0 auto 10px; }
+  #boot .reactor svg { width: 100%; height: 100%; overflow: visible; }
+  #boot .reactor circle, #boot .reactor line { fill: none; }
+  .r-dim { stroke: #123a5e; stroke-width: 1; }
+  .r-ticks { stroke: #2f8fff; stroke-width: 5; stroke-dasharray: 1.5 7.9; opacity: .8; }
+  .r-ticks2 { stroke: #4fe3ff; stroke-width: 9; stroke-dasharray: 1 22; opacity: .7; }
+  .r-sweep { stroke: #4fe3ff; stroke-width: 2; stroke-dasharray: 150 240; stroke-linecap: round; filter: drop-shadow(0 0 6px var(--cyan)); }
+  .r-cross { stroke: #2f6ea8; stroke-width: 1.5; }
+  .r-core { fill: url(#gaugegrad); opacity: .9; filter: drop-shadow(0 0 16px var(--cyan)); animation: corepulse 2.6s ease-in-out infinite; }
+  .r-coreline { stroke: #aef4ff; stroke-width: 1; opacity: .5; animation: cornerpulse 2.6s ease-in-out infinite; }
+  .spin-cw { transform-origin: 100px 100px; animation: spin 14s linear infinite; }
+  .spin-ccw { transform-origin: 100px 100px; animation: spin 10s linear infinite reverse; }
+  .spin-cw-fast { transform-origin: 100px 100px; animation: spin 3.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes corepulse { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
+  #boot .r-label { position: absolute; inset: 0; display: grid; place-items: center; font: 700 12px var(--mono); letter-spacing: .18em; color: #eafbff; text-shadow: 0 0 10px var(--cyan); }
+  /* botão de ativar pulsante */
+  #boot .go { margin: 18px auto 0; display: inline-flex; align-items: center; gap: 10px; background: #0a1c33; color: var(--cyan);
+    border: 1px solid var(--line2); border-radius: 999px; padding: 11px 24px; font: 700 11px var(--mono); letter-spacing: .28em; cursor: pointer;
+    text-transform: uppercase; transition: box-shadow .3s, border-color .3s; animation: gopulse 2.2s ease-in-out infinite; }
+  #boot .go:hover { border-color: var(--cyan); box-shadow: 0 0 28px var(--glow); }
+  #boot .go .godot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); animation: blink 1.4s infinite; }
+  @keyframes gopulse { 0%, 100% { box-shadow: 0 0 0 0 #4fe3ff33; } 50% { box-shadow: 0 0 22px 2px #4fe3ff22; } }
+  @media (prefers-reduced-motion: reduce) { .spin-cw, .spin-ccw, .spin-cw-fast, .r-core, .r-coreline, #boot .go, #boot .title { animation: none; } }
   @keyframes blink { 50% { opacity: .3; } }
 
   /* ---------- navegação lateral e visões ---------- */
@@ -363,10 +390,24 @@
 
 <div id="boot">
   <div class="inner">
+    <div class="reactor" aria-hidden="true">
+      <svg viewBox="0 0 200 200">
+        <circle class="r-dim" cx="100" cy="100" r="96"/>
+        <circle class="r-ticks spin-cw" cx="100" cy="100" r="90"/>
+        <circle class="r-ticks2 spin-ccw" cx="100" cy="100" r="76"/>
+        <circle class="r-sweep spin-cw-fast" cx="100" cy="100" r="62"/>
+        <line class="r-cross" x1="100" y1="8" x2="100" y2="34"/><line class="r-cross" x1="100" y1="166" x2="100" y2="192"/>
+        <line class="r-cross" x1="8" y1="100" x2="34" y2="100"/><line class="r-cross" x1="166" y1="100" x2="192" y2="100"/>
+        <circle class="r-core" cx="100" cy="100" r="30"/>
+        <circle class="r-coreline" cx="100" cy="100" r="40"/>
+      </svg>
+      <div class="r-label">J·A·R·V·I·S</div>
+    </div>
     <div class="title">JARVIS</div>
+    <div class="subtitle">Just A Rather Very Intelligent System</div>
     <div id="bootlines"></div>
     <div class="prog"><i id="bootprog"></i></div>
-    <div class="go">▸ TOQUE PARA ATIVAR</div>
+    <button class="go" id="bootGo"><span class="godot"></span> TOQUE PARA ATIVAR</button>
   </div>
 </div>
 
@@ -782,6 +823,8 @@ const ago = (ts) => { const m = Math.round((Date.now() - ts) / 60000); return m 
 async function loadState() {
   try { S = await (await fetch('/api/state')).json(); $('d-core').className = 'dot ok'; }
   catch { $('d-core').className = 'dot off'; return; }
+  // atualização automática: se o index.html mudou no servidor, recarrega a central sozinha
+  if (S.build) { if (window.__build == null) window.__build = S.build; else if (S.build !== window.__build) { log('Sistema', 'Nova versão da central. Recarregando…'); return location.reload(); } }
   list($('prio'), S.prioridades, 'Nenhuma prioridade definida. No Claude Code: “monte meu plano de hoje”.', (x, i) => { const li = el('li'); li.append(el('b', null, String(i + 1).padStart(2, '0')), el('span', null, x)); return li; });
   list($('inbox'), S.inbox.slice(-6).reverse(), 'Inbox vazio. Diga “Jarvis, anota …”.');
   list($('tasks'), [...S.projects.ativos.map((x) => '◆ ' + x), ...S.tasks.map((r) => `${r[0]}${r[1] ? ' — ' + r[1] : ''}${r[3] ? ' · ' + r[3] : ''}`)], 'Sem tarefas ou projetos ainda.');

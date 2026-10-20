@@ -1,0 +1,28 @@
+================================================
+  J.A.R.V.I.S. — como abrir no Windows
+================================================
+
+PASSO 1 — Instalar o Node.js (só uma vez)
+  - Entre em  https://nodejs.org/pt-br/download
+  - Baixe a versão "LTS" e instale (Avançar, Avançar, Concluir).
+
+PASSO 2 — Abrir o Jarvis
+  - Entre na pasta "app".
+  - Dê dois cliques em  start.bat
+  - Na primeira vez ele instala sozinho (um ou dois minutos) e abre a central
+    no navegador, em  http://localhost:4777
+
+PASSO 3 — Usar
+  - Clique em "TOQUE PARA ATIVAR".
+  - Fale "Jarvis" e o comando, ou digite embaixo.
+
+JÁ FUNCIONA SEM CONFIGURAR NADA:
+  - Mercado (petróleo, dólar, ações, cripto), clima, notícias, hora,
+    abrir e fechar programas, anotações.
+
+PRECISA DE PASSO EXTRA (opcional):
+  - VOZ falada: instalar um motor de voz (VoiceStudio) na porta 3900.
+  - PERGUNTAS ABERTAS ("por que o petróleo subiu?"): entrar com uma conta
+    Claude (login do Claude Code) ou uma chave de API no config.json.
+
+Para desligar: feche a janela preta do Jarvis.

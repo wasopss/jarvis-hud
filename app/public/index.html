@@ -1789,12 +1789,23 @@ function log(who, text) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, armedUntil = 0, sttEngine = SR ? 'chrome' : 'local', netErrors = 0;
 // "Jarvis" como o Chrome costuma ouvir em português
-const WAKE_NAMES = 'jarvis|jarbas|jarvas|jarves|jarviz|djarvis|jarvi|jervis|jarvix|javis|jarvys|garvis|gervis|harvis|charvis|jarvi[sz]e|j\\.?a\\.?r\\.?v\\.?i\\.?s';
-const WAKE = new RegExp(`^(ok\\s+|ei\\s+|hey\\s+|oi\\s+)?(${WAKE_NAMES})\\b[\\s,.!?]*`);
-// o Chrome às vezes junta a fala anterior na mesma frase: procura "Jarvis" em qualquer ponto
-const WAKE_ANY = new RegExp(`(?:^|[\\s,.!?])(?:ok\\s+|ei\\s+|hey\\s+|oi\\s+)?(?:${WAKE_NAMES})\\b[\\s,.!?]*`);
+// o Chrome ouve "Jarvis" de muitos jeitos em português; todos estes contam como a palavra de ativação.
+// NÚCLEO: sons claramente "Jarvis" — valem em qualquer ponto da frase.
+const WAKE_CORE = 'jarvis|jarbas|jarvas|jarves|jarviz|djarvis|jarvi|jervis|jarvix|javis|jarvys|garvis|gervis|harvis|charvis|jarvi[sz]e'
+  + '|jarbes|jarbis|charves|charmes|yarvis|jarviis|j[áa]rvis|j[áa]vis|j\\.?a\\.?r\\.?v\\.?i\\.?s';
+// SOLTOS: palavras comuns que o Chrome troca por "Jarvis" (chaves, jovens…). Só ativam no COMEÇO da fala,
+// para "procurei as chaves" ou "os jovens de hoje" no meio de uma frase não chamarem o Jarvis sem querer.
+const WAKE_LOOSE = 'chaves|chavez|chave|jovens|jovem|jov[ei]s|travis';
+const WAKE_NAMES = `${WAKE_CORE}|${WAKE_LOOSE}`; // usado na checagem simples do reconhecedor
+const PREF = '(?:ok\\s+|ei\\s+|hey\\s+|oi\\s+)?';
+const WAKE = new RegExp(`^${PREF}(${WAKE_NAMES})\\b[\\s,.!?]*`);
+// núcleo em qualquer ponto; soltos só no começo
+const WAKE_CORE_ANY = new RegExp(`(?:^|[\\s,.!?])${PREF}(?:${WAKE_CORE})\\b[\\s,.!?]*`);
+const WAKE_LOOSE_START = new RegExp(`^${PREF}(?:${WAKE_LOOSE})\\b[\\s,.!?]*`);
+const WAKE_ANY = new RegExp(`^${PREF}(?:${WAKE_NAMES})\\b|(?:[\\s,.!?])${PREF}(?:${WAKE_CORE})\\b`);
 function afterWake(said) {
-  const n = norm(said), m = n.match(WAKE_ANY);
+  const n = norm(said);
+  const m = n.match(WAKE_LOOSE_START) || n.match(WAKE_CORE_ANY);
   if (!m) return null;
   // mesma posição no texto original (norm não muda o tamanho das palavras, só acentos e caixa)
   const words = n.slice(0, m.index + m[0].length).trim().split(/\s+/).length;

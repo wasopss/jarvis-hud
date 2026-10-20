@@ -27,3 +27,6 @@ reviews/
 *.wav
 *.m4a
 *.mp3
+
+# pacote Windows gerado
+dist/

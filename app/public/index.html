@@ -576,12 +576,13 @@ let S = null, L = null, T = null, newsTab = null;
 /* =================== voz (VoiceStudio via /api/tts, frase a frase) =================== */
 const A = { ctx: null, analyser: null, src: null, gen: 0, level: 0, data: null };
 function initAudio() {
-  if (A.ctx) return;
+  if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume?.(); return; }
   A.ctx = new AudioContext();
   A.analyser = A.ctx.createAnalyser();
   A.analyser.fftSize = 256; A.analyser.smoothingTimeConstant = 0.78;
   A.analyser.connect(A.ctx.destination);
   A.data = new Uint8Array(A.analyser.frequencyBinCount);
+  if (A.ctx.state === 'suspended') A.ctx.resume?.(); // navegadores começam suspensos até o 1º gesto
 }
 function chunks(text) {
   const parts = text.replace(/\s+/g, ' ').match(/[^.!?;:]+[.!?;:]?/g) || [text];
@@ -1420,6 +1421,32 @@ function sfx(kind) {
   }
 }
 
+// som de fundo da tela de abertura: zumbido do reator + blips de varredura + bip junto da luz que pisca.
+// começa no primeiro toque do senhor (o navegador só libera áudio depois de uma interação).
+let bootAmb = null;
+function startBootAmbient() {
+  if (bootAmb || booted || !A.ctx || !soundOn) return;
+  const ctx = A.ctx, out = ctx.createGain(); out.gain.value = 0.0001; out.connect(ctx.destination);
+  out.gain.exponentialRampToValueAtTime(0.07, ctx.currentTime + 0.6);
+  // zumbido grave do reator, com leve ondulação
+  const hum = ctx.createOscillator(), hg = ctx.createGain(); hum.type = 'sine'; hum.frequency.value = 68;
+  const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 0.28; lg.gain.value = 5; lfo.connect(lg); lg.connect(hum.frequency);
+  hg.gain.value = 0.6; hum.connect(hg); hg.connect(out); hum.start(); lfo.start();
+  const blip = (f, d = 0.05, peak = 0.5, type = 'triangle') => {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + d); o.connect(g); g.connect(out); o.start(); o.stop(ctx.currentTime + d + 0.02);
+  };
+  const beat = setInterval(() => blip(1480, 0.06, 0.5), 1400);   // bip sincronizado com a luz piscando
+  const scan = setInterval(() => blip(760 + Math.random() * 900, 0.04, 0.3), 620); // varredura dos anéis
+  bootAmb = { out, hum, lfo, beat, scan };
+}
+function stopBootAmbient() {
+  if (!bootAmb) return; const { out, hum, lfo, beat, scan } = bootAmb; clearInterval(beat); clearInterval(scan);
+  try { out.gain.exponentialRampToValueAtTime(0.0001, A.ctx.currentTime + 0.25); hum.stop(A.ctx.currentTime + 0.3); lfo.stop(A.ctx.currentTime + 0.3); } catch {}
+  bootAmb = null;
+}
+
 /* =================== música de abertura (uma vez por abertura) =================== */
 // Toca inteira, uma única vez, quando a central é ativada. Sem loops. O arquivo é do usuário:
 // app/public/audio/abertura.mp3 (ou .m4a). Sem arquivo, não toca nada.
@@ -2017,8 +2044,9 @@ const BOOT = ['Carregando arquivos de estado', 'Conectando mercado e clima', 'Si
 })();
 let booted = false;
 async function boot() {
-  if (booted) return; booted = true;
+  if (booted) return;
   initAudio();
+  stopBootAmbient(); booted = true;
   sfx('boot'); // power-up do reator ao ativar
   $('boot').classList.add('hide');
   playOpening();
@@ -2029,7 +2057,9 @@ async function boot() {
   await Promise.all([S || loadState(), L || loadLive(), loadTelemetry()]);
   speak(`${greeting()} Todos os sistemas operacionais.`);
 }
-$('boot').onclick = boot;
+// o botão ATIVAR dá o power-up e entra; tocar em qualquer outro ponto só liga o som de fundo
+$('bootGo').addEventListener('click', (e) => { e.stopPropagation(); boot(); });
+$('boot').addEventListener('pointerdown', () => { if (!booted) { initAudio(); startBootAmbient(); } });
 addEventListener('keydown', (e) => { if (!booted && (e.key === 'Enter' || e.key === ' ')) boot(); });
 
 function tickClock() {

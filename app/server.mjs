@@ -640,13 +640,21 @@ async function askBrain(text) {
         return { ok: false, reason: 'error', detail: String(e.message || e).slice(0, 160) };
       }
     } else {
-      const r = await runJson(await brainBin(), ['-p', text, '--output-format', 'json', '--max-turns', '8',
-        '--allowedTools', ...BRAIN_TOOLS, '--disallowedTools', ...BRAIN_BLOCK, '--append-system-prompt', await brainContext()], 150000);
+      // voz: poucas rodadas e tempo-limite curto para o senhor não esperar; modelo rápido vindo do config
+      const { brain } = await config();
+      const model = brain?.model || 'claude-sonnet-5-5';
+      const maxTurns = String(brain?.maxTurns ?? 3);
+      const r = await runJson(await brainBin(), ['-p', text, '--output-format', 'json', '--max-turns', maxTurns,
+        '--model', model, '--allowedTools', ...BRAIN_TOOLS, '--disallowedTools', ...BRAIN_BLOCK,
+        '--append-system-prompt', await brainContext()], brain?.timeoutMs ?? 60000);
       if (r.is_error) return { ok: false, reason: 'error', detail: String(r.result || '').slice(0, 200) };
       raw = String(r.result || '');
     }
     const { clean, saved } = await absorbMemories(raw);
-    const spoken = clean.replace(/[*#`_>]/g, '').trim();
+    let spoken = clean.replace(/[*#`_>]/g, '').trim();
+    // mantém a resposta curta (voz): no máximo ~3 frases
+    const sents = spoken.match(/[^.!?]+[.!?]+/g);
+    if (sents && sents.length > 3) spoken = sents.slice(0, 3).join(' ').trim();
     HISTORY.push({ q: text.slice(0, 300), a: spoken.slice(0, 400) });
     if (HISTORY.length > 12) HISTORY.shift();
     return { ok: true, text: spoken, saved, via: st.via };

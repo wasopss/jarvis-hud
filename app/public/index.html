@@ -551,7 +551,7 @@ function chunks(text) {
   return out;
 }
 const PRE = new Map(); // áudio pedido com antecedência (briefing)
-const VOICE_TIMEOUT_MS = 30000; // passou disso, a frase aparece só em texto (a voz continua sendo gerada para a próxima vez)
+const VOICE_TIMEOUT_MS = 45000; // passou disso, a frase aparece só em texto (a voz continua sendo gerada para a próxima vez)
 function prefetch(text) { for (const c of chunks(text)) if (!PRE.has(c)) PRE.set(c, fetchAudio(c).catch(() => null)); }
 // No máximo 2 pedidos de voz ao mesmo tempo: o navegador tem só 6 conexões por site,
 // e a voz lenta não pode travar o resto (memória, inbox, dados).

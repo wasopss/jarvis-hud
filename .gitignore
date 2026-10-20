@@ -1,0 +1,29 @@
+# bibliotecas (npm install recria)
+node_modules/
+# áudio gerado pela voz (recriado sozinho; passa do limite do GitHub)
+app/cache/
+app/cache-*/
+# binários compilados (recompile a partir dos .swift)
+app/tools/master
+app/tools/noisemeter
+app/tools/ocr
+# segurança: nunca subir chaves
+.env
+*.key
+# macOS
+.DS_Store
+
+# nunca publicar voz nem dados pessoais
+voz/
+video/audio*/
+video/saida/
+data/
+daily/
+inbox.md
+tasks.md
+projects.md
+reviews/
+*.mp4
+*.wav
+*.m4a
+*.mp3

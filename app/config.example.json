@@ -1,0 +1,32 @@
+{
+  "location": {
+    "name": "São Paulo",
+    "lat": -23.55,
+    "lon": -46.63
+  },
+  "voice": {
+    "instruct": "male, low pitch, british accent",
+    "seed": 42,
+    "speed": 1.0,
+    "effect": "broadcast",
+    "profileId": null,
+    "profileName": "voz do jarvis",
+    "steps": 12,
+    "master": {
+      "enabled": true,
+      "lufs": -16,
+      "stereo": true
+    },
+    "regenAddon": false
+  },
+  "opening": {
+    "youtubeId": "xjpe7EGyiw8",
+    "inicio": 93,
+    "titulo": "Justin Timberlake — Let Me Talk To You/My Love ft. T.I. (canal oficial)"
+  },
+  "brain": {
+    "apiKey": "",
+    "model": "claude-opus-5-5",
+    "effort": "low"
+  }
+}

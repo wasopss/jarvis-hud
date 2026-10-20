@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estúdio de vídeo do Jarvis</title>
+<style>
+  :root { --bg: #02060d; --text: #dcecff; --dim: #5f86ad; --cyan: #4fe3ff; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px -apple-system, "Segoe UI", sans-serif; }
+  .wrap { display: flex; gap: 20px; padding: 16px; align-items: flex-start; flex-wrap: wrap; }
+  canvas { height: calc(100vh - 32px); max-width: 100%; aspect-ratio: 9 / 16; border: 1px solid #17406a; border-radius: 8px; background: #000; }
+  .side { max-width: 340px; }
+  button { background: var(--cyan); color: var(--bg); border: 0; border-radius: 6px; padding: 12px 16px; font: 700 12px ui-monospace, Menlo, monospace; letter-spacing: .14em; cursor: pointer; margin: 0 8px 8px 0; }
+  button.sec { background: none; color: var(--cyan); border: 1px solid var(--cyan); }
+  #st { font: 12px/1.6 ui-monospace, Menlo, monospace; color: var(--dim); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="c" width="1080" height="1920"></canvas>
+  <div class="side">
+    <h2 style="margin:0 0 8px;font-weight:300">Estúdio de vídeo</h2>
+    <p style="color:var(--dim);margin:0 0 12px">Vertical 9:16 · narração com a voz única do Jarvis · legendas embutidas.</p>
+    <button id="exp">EXPORTAR VÍDEO</button><button id="prev" class="sec">PRÉVIA</button><button id="rec" class="sec">GRAVAR AO VIVO</button>
+    <div id="st">Carregando narração…</div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"></script>
+<script>
+const C = document.getElementById('c'), g = C.getContext('2d'), W = 1080, H = 1920;
+const st = (m) => { document.getElementById('st').textContent = m; };
+const SCENES = [
+  { tag: '', title: 'Como funciona um assistente pessoal com IA', text: 'Boa tarde. Eu sou o Jarvis, o assistente pessoal do Wash. Vou mostrar como eu funciono, em cinco passos.' },
+  { tag: '1 · ESCUTA', title: 'Ele escuta', text: 'Passo um: eu escuto. Quando ele diz Jarvis, o microfone transforma a fala em texto, em menos de um segundo.' },
+  { tag: '2 · ENTENDE', title: 'Ele entende o pedido', text: 'Passo dois: eu entendo. Eu identifico o pedido. Pode ser abrir um programa, anotar uma tarefa ou consultar o mercado.' },
+  { tag: '3 · BUSCA', title: 'Busca dados reais', text: 'Passo três: eu busco os dados. Cotações, clima, notícias do setor e a minha memória, sempre com fonte. Eu não invento números.' },
+  { tag: '4 · FALA', title: 'Responde com voz', text: 'Passo quatro: eu respondo com voz. O texto vira fala no próprio computador, sem mandar a voz para a nuvem.' },
+  { tag: '5 · SEGURANÇA', title: 'Só age com permissão', text: 'Passo cinco: eu peço permissão. Enviar, apagar ou comprar, só com a aprovação dele.' },
+  { tag: '', title: 'Comente "JARVIS"', text: 'Quer um assistente assim? Comente a palavra Jarvis, que eu explico.' },
+];
+const GAP = 0.6, TAIL = 1.4; // pausa entre cenas: o efeito de transição cabe inteiro, sem encostar na fala
+let A = null, buffers = [], starts = [], total = 0, market = [];
+
+/* ---------- carregar narração e dados ---------- */
+async function load() {
+  A = new AudioContext();
+  buffers = [];
+  for (let i = 0; i < SCENES.length; i++) {
+    const r = await fetch(`/video/audio/cena-${i + 1}.wav`);
+    if (!r.ok) throw new Error(`falta a narração da cena ${i + 1}`);
+    buffers.push(await A.decodeAudioData(await r.arrayBuffer()));
+  }
+  let t = 0.3; starts = [];
+  for (const b of buffers) { starts.push(t); t += b.duration + GAP; }
+  total = t + TAIL;
+  try { market = (await (await fetch('/api/live')).json()).market || []; } catch { market = []; }
+  st(`Narração pronta: ${buffers.length} cenas · ${total.toFixed(1)} s no total.\nPRÉVIA mostra o vídeo com som. GRAVAR salva o arquivo em ~/jarvis/video/saida/.`);
+}
+
+/* ---------- desenho ---------- */
+const ease = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function panel(x, y, w, h, alpha = 1) {
+  g.save(); g.globalAlpha = alpha;
+  rr(x, y, w, h, 22); g.fillStyle = 'rgba(8,23,42,.86)'; g.fill();
+  g.strokeStyle = '#17406a'; g.lineWidth = 2; g.stroke();
+  g.fillStyle = '#4fe3ff'; g.fillRect(x + 24, y, 80, 4);
+  g.restore();
+}
+function text(t, x, y, size, color = '#dcecff', weight = 400, align = 'left', font = '-apple-system, "Segoe UI", sans-serif') {
+  g.font = `${weight} ${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.fillText(t, x, y);
+}
+function wrap(t, maxW, size, weight = 400) {
+  g.font = `${weight} ${size}px -apple-system, "Segoe UI", sans-serif`;
+  const words = t.split(' '), lines = []; let cur = '';
+  for (const w of words) { const test = cur ? cur + ' ' + w : w; if (g.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; } else cur = test; }
+  if (cur) lines.push(cur); return lines;
+}
+const LOOPS = Array.from({ length: 9 }, (_, i) => ({ seed: i * 1.37, speed: 0.25 + (i % 4) * 0.09, amp: 0.05 + (i % 3) * 0.025, k: 2 + (i % 5) }));
+const noise = (x, s) => Math.sin(x * 1.7 + s) * 0.5 + Math.sin(x * 3.1 - s * 1.3) * 0.3 + Math.sin(x * 5.3 + s * 0.7) * 0.2;
+function orb(cx, cy, R, ts, lvl) {
+  g.save(); g.translate(cx, cy);
+  const halo = g.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.6);
+  halo.addColorStop(0, `rgba(47,143,255,${0.18 + lvl * 0.3})`); halo.addColorStop(1, 'rgba(47,143,255,0)');
+  g.fillStyle = halo; g.beginPath(); g.arc(0, 0, R * 1.6, 0, Math.PI * 2); g.fill();
+  g.globalCompositeOperation = 'lighter';
+  LOOPS.forEach((L, li) => {
+    const s = ts * L.speed * (1 + lvl * 2) + L.seed;
+    g.beginPath();
+    for (let i = 0; i <= 160; i++) {
+      const a = (i / 160) * Math.PI * 2;
+      const r = R * (1 + L.amp * (1 + lvl * 2) * noise(a * L.k / 2 + li, s) + 0.04 * Math.sin(a * L.k + s * 2));
+      i ? g.lineTo(Math.cos(a) * r, Math.sin(a) * r) : g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath(); g.strokeStyle = `hsla(${210 + li * 3},100%,${62 + li * 2}%,${0.25 + lvl * 0.35})`; g.lineWidth = 3; g.shadowColor = '#2f8fff'; g.shadowBlur = 22; g.stroke();
+  });
+  g.shadowBlur = 0;
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.45);
+  core.addColorStop(0, `rgba(170,230,255,${0.35 + lvl * 0.5})`); core.addColorStop(1, 'rgba(47,143,255,0)');
+  g.fillStyle = core; g.beginPath(); g.arc(0, 0, R * 0.45, 0, Math.PI * 2); g.fill();
+  g.restore(); g.globalCompositeOperation = 'source-over';
+}
+/* ---------- 3D: projeção em perspectiva ---------- */
+const FOCAL = 760;
+const STARS = Array.from({ length: 420 }, () => ({ x: (Math.random() - 0.5) * 3200, y: (Math.random() - 0.5) * 5200, z: Math.random() * 2400 + 60 }));
+let lastT = 0;
+function starfield(T, warp) {
+  const dt = Math.max(0, Math.min(0.05, T - lastT)); lastT = T;
+  const speed = 140 + warp * 2600;
+  g.save(); g.translate(W / 2, H / 2);
+  for (const st of STARS) {
+    const pz = st.z; st.z -= speed * dt;
+    if (st.z < 40) { st.z = 2400; st.x = (Math.random() - 0.5) * 3200; st.y = (Math.random() - 0.5) * 5200; continue; }
+    const k = FOCAL / st.z, x = st.x * k, y = st.y * k;
+    if (Math.abs(x) > W / 2 + 40 || Math.abs(y) > H / 2 + 40) continue;
+    const near = 1 - st.z / 2400, a = 0.15 + near * 0.85;
+    if (warp > 0.05) { // rastro de velocidade
+      const k0 = FOCAL / pz;
+      g.strokeStyle = `rgba(120,200,255,${a * 0.8})`; g.lineWidth = 1 + near * 2.5;
+      g.beginPath(); g.moveTo(st.x * k0, st.y * k0); g.lineTo(x, y); g.stroke();
+    } else { g.fillStyle = `rgba(160,215,255,${a})`; g.beginPath(); g.arc(x, y, 0.6 + near * 2.4, 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+}
+function rot3(p, ax, ay) {
+  const cy = Math.cos(ay), sy = Math.sin(ay), cx = Math.cos(ax), sx = Math.sin(ax);
+  const x = p[0] * cy + p[2] * sy, z0 = -p[0] * sy + p[2] * cy;
+  return [x, p[1] * cx - z0 * sx, p[1] * sx + z0 * cx];
+}
+function globe(cx, cy, R, ts, alpha = 1) {
+  const ay = ts * 0.35, ax = 0.42;
+  const proj = (p) => { const q = rot3(p, ax, ay), k = FOCAL / (FOCAL + q[2] + R * 1.4); return [cx + q[0] * k, cy + q[1] * k, q[2]]; };
+  const line = (pts) => {
+    for (let i = 1; i < pts.length; i++) {
+      const a = proj(pts[i - 1]), b = proj(pts[i]), depth = (a[2] + b[2]) / 2;
+      g.strokeStyle = `rgba(79,227,255,${alpha * (depth < 0 ? 0.55 : 0.14)})`; g.lineWidth = depth < 0 ? 2 : 1;
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    }
+  };
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const r = R * Math.cos(lat * Math.PI / 180), y = R * Math.sin(lat * Math.PI / 180);
+    line(Array.from({ length: 49 }, (_, i) => { const a = i / 48 * Math.PI * 2; return [r * Math.cos(a), y, r * Math.sin(a)]; }));
+  }
+  for (let lon = 0; lon < 180; lon += 30) {
+    const o = lon * Math.PI / 180;
+    line(Array.from({ length: 49 }, (_, i) => { const a = i / 48 * Math.PI * 2; return [R * Math.cos(a) * Math.cos(o), R * Math.sin(a), R * Math.cos(a) * Math.sin(o)]; }));
+  }
+}
+function rings3d(cx, cy, R, ts) {
+  [[0.9, 0.5, 1], [1.25, -0.8, -0.7], [1.55, 1.3, 0.45]].forEach(([rk, tilt, spd], j) => {
+    const pts = Array.from({ length: 97 }, (_, i) => { const a = i / 96 * Math.PI * 2; return [R * rk * Math.cos(a), 0, R * rk * Math.sin(a)]; });
+    for (let i = 1; i < pts.length; i++) {
+      const A = rot3(pts[i - 1], tilt, ts * spd), B = rot3(pts[i], tilt, ts * spd);
+      const kA = FOCAL / (FOCAL + A[2]), kB = FOCAL / (FOCAL + B[2]), front = (A[2] + B[2]) / 2 < 0;
+      g.strokeStyle = `rgba(${j === 1 ? '255,181,71' : '79,227,255'},${front ? 0.75 : 0.2})`; g.lineWidth = front ? 3 : 1.5;
+      g.beginPath(); g.moveTo(cx + A[0] * kA, cy + A[1] * kA); g.lineTo(cx + B[0] * kB, cy + B[1] * kB); g.stroke();
+    }
+    // satélite brilhando no anel
+    const s = rot3([R * rk * Math.cos(ts * 2 + j), 0, R * rk * Math.sin(ts * 2 + j)], tilt, ts * spd), ks = FOCAL / (FOCAL + s[2]);
+    g.fillStyle = s[2] < 0 ? '#ffffff' : 'rgba(255,255,255,.3)'; g.beginPath(); g.arc(cx + s[0] * ks, cy + s[1] * ks, s[2] < 0 ? 7 : 4, 0, Math.PI * 2); g.fill();
+  });
+}
+function background(ts, warp = 0) {
+  const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#04101f'); bg.addColorStop(1, '#02060d');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  starfield(ts, warp);
+  g.strokeStyle = 'rgba(47,143,255,.06)'; g.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = (ts * 20) % 60; y < H; y += 60) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+}
+function header(si) {
+  text('JARVIS', 70, 120, 40, '#4fe3ff', 800, 'left', 'ui-monospace, Menlo, monospace');
+  text('ASSISTENTE PESSOAL', 70, 160, 22, '#5f86ad', 600, 'left', 'ui-monospace, Menlo, monospace');
+  for (let k = 1; k <= 5; k++) {
+    const on = si >= k && si <= 5, x = W - 70 - (5 - k) * 46;
+    g.beginPath(); g.arc(x, 128, 12, 0, Math.PI * 2);
+    g.fillStyle = on ? (si === k ? '#4fe3ff' : '#3ee6a2') : '#17406a'; g.fill();
+  }
+}
+function captions(si, lt, dur) {
+  const s = SCENES[si], words = s.text.split(' '), chunks = [];
+  for (let i = 0; i < words.length; i += 5) chunks.push(words.slice(i, i + 5).join(' '));
+  const lens = chunks.map((c) => c.length), sum = lens.reduce((a, b) => a + b, 0);
+  let acc = 0, idx = chunks.length - 1;
+  for (let i = 0; i < chunks.length; i++) { acc += lens[i] / sum * dur; if (lt < acc) { idx = i; break; } }
+  const c = chunks[idx]; if (!c || lt > dur + 0.2) return;
+  g.font = '700 56px -apple-system, "Segoe UI", sans-serif';
+  const w = Math.min(W - 120, g.measureText(c).width + 70);
+  rr((W - w) / 2, 1560, w, 104, 26); g.fillStyle = 'rgba(2,6,13,.82)'; g.fill(); g.strokeStyle = '#4fe3ff'; g.lineWidth = 3; g.stroke();
+  text(c, W / 2, 1630, 56, '#ffffff', 700, 'center');
+}
+function sceneArt(si, lt, ts, lvl) {
+  const k = ease(lt / 0.6);
+  if (si === 0 || si === 6) {
+    globe(W / 2, 760, 330, ts, k);
+    orb(W / 2, 760, 300, ts, lvl);
+    rings3d(W / 2, 760, 300, ts);
+    const lines = wrap(SCENES[si].title, W - 160, 76, 300);
+    lines.forEach((l, i) => text(l, W / 2, 1220 + i * 92, 76, `rgba(220,236,255,${k})`, 300, 'center'));
+    if (si === 6) text('Comente e eu explico como montar o seu', W / 2, 1220 + lines.length * 92 + 20, 36, '#5f86ad', 400, 'center');
+    return;
+  }
+  // etapa
+  text(SCENES[si].tag, 70, 330, 34, '#4fe3ff', 700, 'left', 'ui-monospace, Menlo, monospace');
+  wrap(SCENES[si].title, W - 140, 92, 300).forEach((l, i) => text(l, 70, 440 + i * 104, 92, `rgba(220,236,255,${k})`, 300));
+  orb(W - 140, 235, 56, ts, lvl);
+  rings3d(W - 140, 235, 56, ts);
+  const y0 = 640, x0 = 70, pw = W - 140;
+  const flip = (1 - ease(lt / 0.8)) * 1.25; // ~72° → 0°
+  g.save(); g.globalAlpha = Math.min(1, k * 1.2);
+  g.translate(W / 2, y0); g.transform(1, 0, -Math.sin(flip) * 0.18, Math.max(0.06, Math.cos(flip)), 0, 0); g.translate(-W / 2, -y0);
+  g.shadowColor = 'rgba(47,143,255,.45)'; g.shadowBlur = 50 * (1 - flip / 1.25); g.shadowOffsetY = 26;
+  if (si === 1) {
+    panel(x0, y0, pw, 640);
+    text('MICROFONE · AO VIVO', x0 + 40, y0 + 80, 26, '#5f86ad', 600, 'left', 'ui-monospace, Menlo, monospace');
+    for (let i = 0; i < 40; i++) { const h = 30 + Math.abs(Math.sin(ts * 6 + i * 0.6)) * 160 * (0.4 + lvl); g.fillStyle = '#4fe3ff'; g.fillRect(x0 + 50 + i * 22, y0 + 300 - h / 2, 12, h); }
+    const said = '“Jarvis, como está o mercado?”', n = Math.floor(Math.min(1, lt / 2.4) * said.length);
+    text(said.slice(0, n), x0 + 40, y0 + 520, 50, '#ffffff', 500);
+    text('fala → texto em menos de 1 s', x0 + 40, y0 + 590, 30, '#3ee6a2', 500, 'left', 'ui-monospace, Menlo, monospace');
+  } else if (si === 2) {
+    panel(x0, y0, pw, 720);
+    text('COMANDO RECONHECIDO', x0 + 40, y0 + 80, 26, '#5f86ad', 600, 'left', 'ui-monospace, Menlo, monospace');
+    const opts = ['Abrir um programa', 'Anotar uma tarefa', 'Consultar o mercado'];
+    const on = Math.min(2, Math.floor(lt / 2.2));
+    opts.forEach((o, i) => {
+      const y = y0 + 150 + i * 170, act = i === on;
+      rr(x0 + 40, y, pw - 80, 130, 18); g.fillStyle = act ? 'rgba(79,227,255,.16)' : 'rgba(10,28,51,.9)'; g.fill();
+      g.strokeStyle = act ? '#4fe3ff' : '#17406a'; g.lineWidth = act ? 4 : 2; g.stroke();
+      text(o, x0 + 80, y + 82, 48, act ? '#ffffff' : '#5f86ad', act ? 600 : 400);
+      if (act) text('✓', x0 + pw - 110, y + 84, 52, '#3ee6a2', 700);
+    });
+  } else if (si === 3) {
+    panel(x0, y0, pw, 760);
+    text('MERCADO · AO VIVO', x0 + 40, y0 + 80, 26, '#5f86ad', 600, 'left', 'ui-monospace, Menlo, monospace');
+    const rows = market.filter((q) => ['Brent', 'WTI', 'PETR4', 'VALE3', 'Dólar'].includes(q.n)).slice(0, 5);
+    rows.forEach((q, i) => {
+      const y = y0 + 170 + i * 110, a = ease((lt - i * 0.35) / 0.5);
+      g.globalAlpha = k * a;
+      text(q.n, x0 + 40, y, 46, '#dcecff', 600);
+      text(`${q.u} ${q.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, x0 + pw - 300, y, 44, '#dcecff', 500, 'right', 'ui-monospace, Menlo, monospace');
+      const ch = q.change ?? 0; text(`${ch >= 0 ? '+' : ''}${ch.toFixed(2).replace('.', ',')}%`, x0 + pw - 40, y, 40, ch >= 0 ? '#3ee6a2' : '#ff5d6c', 600, 'right', 'ui-monospace, Menlo, monospace');
+    });
+    g.globalAlpha = k;
+    if (!rows.length) text('cotações indisponíveis agora', x0 + 40, y0 + 200, 40, '#5f86ad');
+    text('Fonte: Yahoo Finance · nada é estimado', x0 + 40, y0 + 720, 28, '#5f86ad', 500, 'left', 'ui-monospace, Menlo, monospace');
+  } else if (si === 4) {
+    panel(x0, y0, pw, 760);
+    text('PROCESSO AO VIVO', x0 + 40, y0 + 80, 26, '#5f86ad', 600, 'left', 'ui-monospace, Menlo, monospace');
+    const steps = [['Resposta pronta', 'texto montado'], ['Voz gerando', 'no próprio computador'], ['Tocando', 'voz do Jarvis']];
+    steps.forEach(([a, b], i) => {
+      const y = y0 + 190 + i * 180, on = lt > i * 1.6, cur = on && lt < (i + 1) * 1.6;
+      g.beginPath(); g.arc(x0 + 70, y - 14, 18, 0, Math.PI * 2); g.fillStyle = on ? (cur ? '#4fe3ff' : '#3ee6a2') : '#17406a'; g.fill();
+      text(a, x0 + 120, y, 48, on ? '#ffffff' : '#5f86ad', 600);
+      text(b, x0 + 120, y + 52, 32, '#5f86ad', 400);
+    });
+    for (let i = 0; i < 40; i++) { const h = 10 + Math.abs(Math.sin(ts * 7 + i)) * 70 * lvl; g.fillStyle = '#2f8fff'; g.fillRect(x0 + 50 + i * 22, y0 + 690 - h / 2, 12, h); }
+  } else if (si === 5) {
+    panel(x0, y0, pw, 620);
+    text('CONFIRMAÇÃO', x0 + 40, y0 + 80, 26, '#ffb547', 600, 'left', 'ui-monospace, Menlo, monospace');
+    wrap('Modo foco: vou fechar o WhatsApp e abrir o VS Code. Confirma, senhor?', pw - 80, 50, 400).forEach((l, i) => text(l, x0 + 40, y0 + 180 + i * 66, 50, '#ffffff', 400));
+    const bw = (pw - 120) / 2, press = lt > 2.6;
+    rr(x0 + 40, y0 + 440, bw, 120, 18); g.fillStyle = press ? '#ffb547' : 'rgba(255,181,71,.16)'; g.fill(); g.strokeStyle = '#ffb547'; g.lineWidth = 3; g.stroke();
+    text('CONFIRMAR', x0 + 40 + bw / 2, y0 + 515, 38, press ? '#02060d' : '#ffb547', 700, 'center', 'ui-monospace, Menlo, monospace');
+    rr(x0 + 80 + bw, y0 + 440, bw, 120, 18); g.strokeStyle = '#ffb547'; g.stroke();
+    text('CANCELAR', x0 + 80 + bw * 1.5, y0 + 515, 38, '#ffb547', 700, 'center', 'ui-monospace, Menlo, monospace');
+  }
+  g.restore();
+}
+
+/* ---------- linha do tempo ---------- */
+let an = null, data = null;
+function frame(T, lvlOverride = null) {
+  // T = segundos desde o início do vídeo
+  let si = 0; for (let i = 0; i < starts.length; i++) if (T >= starts[i] - GAP / 2) si = i;
+  const lt = T - starts[si], dur = buffers[si]?.duration || 3;
+  let lvl = 0;
+  if (lvlOverride !== null) lvl = lvlOverride;
+  else if (an) { an.getByteFrequencyData(data); lvl = data.slice(2, 60).reduce((a, b) => a + b, 0) / 58 / 255; }
+  const sinceCut = T - (starts[si] - GAP / 2);
+  const warp = si > 0 ? Math.max(0, 1 - sinceCut / 0.7) : Math.max(0, 1 - T / 1.2);
+  g.save();
+  if (si === 6 && sinceCut < 0.5) { const sh = (1 - sinceCut / 0.5) * 14; g.translate((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh); }
+  background(T, warp);
+  header(si);
+  sceneArt(si, lt, T, lvl);
+  captions(si, lt, dur);
+  g.restore();
+  // fade de entrada/saída
+  const fade = Math.min(1, T / 0.4, (total - T) / 0.6);
+  if (fade < 1) { g.fillStyle = `rgba(2,6,13,${1 - Math.max(0, fade)})`; g.fillRect(0, 0, W, H); }
+}
+
+
+/* ---------- barramento final: voz + efeitos → limitador (pico máximo ~-1 dBFS, sem distorção) ---------- */
+function masterBus(ctx, out = ctx.destination) {
+  const pre = ctx.createGain(); pre.gain.value = 0.89;
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.06;
+  pre.connect(lim); lim.connect(out);
+  return pre;
+}
+
+/* ---------- efeitos sonoros (sintetizados no navegador, nada de arquivos de terceiros) ---------- */
+function buildSfx(ctx, out, t0) {
+  const MIX = { base: 0.45, sobVoz: 0.12, fundo: 0.022 }; // trilha a 45%, 12% durante a fala
+  const bus = ctx.createGain(); bus.gain.value = MIX.base;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+  bus.connect(comp); comp.connect(out);
+  // abaixa os efeitos enquanto a voz fala (ducking)
+  buffers.forEach((b, i) => {
+    const a = t0 + starts[i], z = a + b.duration;
+    bus.gain.setTargetAtTime(MIX.sobVoz, a - 0.25, 0.04);
+    bus.gain.setTargetAtTime(MIX.base, z + 0.35, 0.2);
+  });
+  const noiseBuf = (() => { const n = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = n.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return n; })();
+  const env = (node, t, a, peak, d) => { node.gain.setValueAtTime(0.0001, t); node.gain.exponentialRampToValueAtTime(peak, t + a); node.gain.exponentialRampToValueAtTime(0.0001, t + a + d); };
+  const tone = (t, f, dur, { type = 'sine', vol = 0.25, f2 = null, pan = 0 } = {}) => {
+    const o = ctx.createOscillator(), gn = ctx.createGain(), p = ctx.createStereoPanner(); p.pan.value = pan;
+    o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    env(gn, t, 0.008, vol, dur); o.connect(gn); gn.connect(p); p.connect(bus); o.start(t); o.stop(t + dur + 0.05);
+  };
+  const noise = (t, dur, { f1 = 400, f2 = 4000, q = 1.2, vol = 0.3, pan1 = -0.8, pan2 = 0.8, attack = 0.08 } = {}) => {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q;
+    bp.frequency.setValueAtTime(f1, t); bp.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    const gn = ctx.createGain(); env(gn, t, attack, vol, dur);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(pan1, t); p.pan.linearRampToValueAtTime(pan2, t + dur);
+    s.connect(bp); bp.connect(gn); gn.connect(p); p.connect(bus); s.start(t); s.stop(t + dur + 0.1);
+  };
+  // fundo ambiente: dois osciladores desafinados num filtro grave
+  const pad = ctx.createGain(); pad.gain.setValueAtTime(0.0001, t0); pad.gain.exponentialRampToValueAtTime(MIX.fundo, t0 + 2.5);
+  pad.gain.setValueAtTime(MIX.fundo, t0 + total - 2); pad.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; pad.connect(lp); lp.connect(bus);
+  [55, 82.4, 110.6].forEach((f) => { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 14; o.connect(pad); o.start(t0); o.stop(t0 + total + 0.2); });
+  // abertura: subida + brilho
+  noise(t0, 2.2, { f1: 200, f2: 6000, q: 2, vol: 0.22, attack: 1.6 });
+  tone(t0 + 0.2, 110, 2.0, { type: 'triangle', vol: 0.12, f2: 440 });
+  tone(t0 + 2.1, 880, 0.5, { vol: 0.12 }); tone(t0 + 2.18, 1320, 0.7, { vol: 0.1 });
+  // trocas de cena: whoosh + bipe de interface
+  starts.forEach((s, i) => {
+    const t = t0 + s - GAP;            // fim da frase anterior
+    if (i > 0) noise(t + 0.1, 0.38, { f1: 3500, f2: 300, q: 1.4, vol: 0.32, pan1: i % 2 ? -0.9 : 0.9, pan2: i % 2 ? 0.9 : -0.9, attack: 0.12 });
+    if (i >= 1 && i <= 5) { tone(t0 + s - 0.24, 1046, 0.07, { vol: 0.16 }); tone(t0 + s - 0.17, 1568, 0.1, { vol: 0.14 }); } // antes da fala
+  });
+  const T = (i, dt) => t0 + starts[i] + dt;
+  // cena 2 (escuta): teclado digitando
+  for (let k = 0; k < 28; k++) noise(T(1, 0.1 + k * 0.085), 0.03, { f1: 3000, f2: 2500, q: 6, vol: 0.12, pan1: 0.2, pan2: 0.2, attack: 0.003 });
+  // cena 3 (entende): seleção de opção
+  [0, 2.2, 4.4].forEach((d, j) => { tone(T(2, d + 0.05), 660 + j * 110, 0.12, { type: 'square', vol: 0.05 }); tone(T(2, d + 0.12), 990 + j * 110, 0.18, { vol: 0.12 }); });
+  // cena 4 (busca): toques de dados por linha
+  for (let j = 0; j < 5; j++) tone(T(3, j * 0.35), 1400 + j * 120, 0.08, { vol: 0.1, pan: -0.5 + j * 0.25 });
+  // cena 5 (fala): três etapas com acorde
+  [0, 1.6, 3.2].forEach((d, j) => tone(T(4, d), [523, 659, 784][j], 0.35, { vol: 0.12 }));
+  // cena 6 (segurança): clique de confirmação + sucesso
+  tone(T(5, 2.6), 180, 0.06, { type: 'square', vol: 0.12 }); noise(T(5, 2.6), 0.05, { f1: 2000, f2: 1800, q: 4, vol: 0.18, pan1: 0, pan2: 0, attack: 0.002 });
+  tone(T(5, 2.75), 784, 0.25, { vol: 0.12 }); tone(T(5, 2.9), 1175, 0.4, { vol: 0.12 });
+  // cena 7 (chamada final): impacto grave + brilho
+  tone(T(6, -0.2), 120, 0.9, { vol: 0.5, f2: 38 }); noise(T(6, -0.2), 0.5, { f1: 900, f2: 120, q: 0.8, vol: 0.35, pan1: 0, pan2: 0, attack: 0.01 });
+  [1568, 2093, 2637].forEach((f, j) => tone(T(6, 0.3 + j * 0.08), f, 0.9, { vol: 0.06 }));
+  // final
+  tone(t0 + total - 1.3, 440, 1.2, { type: 'triangle', vol: 0.1, f2: 220 });
+}
+
+async function play(record) {
+  if (!buffers.length) await load();
+  await A.resume();
+  an = A.createAnalyser(); an.fftSize = 256; data = new Uint8Array(an.frequencyBinCount);
+  const dest = A.createMediaStreamDestination();
+  const liveMaster = masterBus(A, dest); if (!record) liveMaster.connect(A.destination);
+  const t0 = A.currentTime + 0.2;
+  buffers.forEach((b, i) => {
+    const s = A.createBufferSource(); s.buffer = b; s.connect(an); s.connect(liveMaster);
+    s.start(t0 + starts[i]);
+  });
+  const sfxOut = A.createGain(); sfxOut.connect(liveMaster);
+  buildSfx(A, sfxOut, t0);
+  lastT = 0;
+  let recorder = null, parts = [], mime = '';
+  if (record) {
+    const stream = new MediaStream([...C.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 160_000 });
+    recorder.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    recorder.start(1000);
+    st(`Gravando (${mime || 'padrão'})… ${total.toFixed(0)} s`);
+  }
+  await new Promise((done) => {
+    const tick = () => {
+      const T = A.currentTime - t0;
+      frame(Math.max(0, T));
+      if (record) st(`Gravando… ${Math.max(0, T).toFixed(0)} / ${total.toFixed(0)} s`);
+      if (T < total) requestAnimationFrame(tick); else done();
+    };
+    tick();
+  });
+  if (!record) return st('Prévia concluída.');
+  await new Promise((ok) => { recorder.onstop = ok; recorder.stop(); });
+  const blob = new Blob(parts, { type: mime || 'video/webm' });
+  st(`Salvando ${(blob.size / 1048576).toFixed(1)} MB…`);
+  const r = await fetch('/api/video/save?nome=jarvis-passo-a-passo-3d', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob }).then((x) => x.json());
+  window.__saved = r;
+  st(r.ok ? `✓ Vídeo salvo: ${r.file} (${r.mb} MB)` : 'Falhou ao salvar.');
+}
+
+/* ---------- exportação quadro a quadro (30 fps exatos, independe da velocidade do Mac) ---------- */
+async function exportVideo() {
+  if (!buffers.length) await load();
+  if (!window.VideoEncoder || !window.AudioEncoder || !window.Mp4Muxer) return st('Este navegador não tem WebCodecs/muxer: use GRAVAR AO VIVO.');
+  const FPS = 30, SR = 48000, frames = Math.ceil(total * FPS);
+  // 1) áudio: voz + efeitos mixados offline
+  st('Mixando áudio (voz + efeitos)…');
+  const off = new OfflineAudioContext(2, Math.ceil(total * SR), SR);
+  const master = masterBus(off);
+  buffers.forEach((b, i) => { const s = off.createBufferSource(); s.buffer = b; s.connect(master); s.start(starts[i]); });
+  buildSfx(off, master, 0);
+  const mix = await off.startRendering();
+  // envelope de volume por quadro (o orbe reage à voz)
+  const L = mix.getChannelData(0), per = Math.floor(SR / FPS), env = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) { let e = 0; const a = f * per; for (let j = a; j < Math.min(L.length, a + per); j++) e += L[j] * L[j]; env[f] = Math.min(1, Math.sqrt(e / per) * 3.2); }
+  // 2) muxer + codificadores
+  const muxer = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), fastStart: 'in-memory',
+    video: { codec: 'avc', width: W, height: H, frameRate: FPS }, audio: { codec: 'aac', sampleRate: SR, numberOfChannels: 2 } });
+  const venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => st('Erro no vídeo: ' + e.message) });
+  venc.configure({ codec: 'avc1.640028', width: W, height: H, bitrate: 9_000_000, framerate: FPS, latencyMode: 'quality' });
+  const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => st('Erro no áudio: ' + e.message) });
+  aenc.configure({ codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: 2, bitrate: 192_000 });
+  // 3) áudio em blocos
+  const R = mix.getChannelData(1), BLK = 1024;
+  for (let i = 0; i < mix.length; i += BLK) {
+    const n = Math.min(BLK, mix.length - i), planar = new Float32Array(n * 2);
+    planar.set(L.subarray(i, i + n), 0); planar.set(R.subarray(i, i + n), n);
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(i / SR * 1e6), data: planar });
+    aenc.encode(ad); ad.close();
+  }
+  // 4) vídeo quadro a quadro
+  lastT = 0;
+  const t0 = performance.now();
+  for (let f = 0; f < frames; f++) {
+    frame(f / FPS, env[f]);
+    const vf = new VideoFrame(C, { timestamp: Math.round(f * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+    venc.encode(vf, { keyFrame: f % (FPS * 2) === 0 }); vf.close();
+    if (venc.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 5));
+    if (f % 15 === 0) { st(`Renderizando quadro ${f}/${frames} (${Math.round(f / frames * 100)}%)…`); await new Promise((r) => setTimeout(r, 0)); }
+  }
+  await venc.flush(); await aenc.flush(); muxer.finalize();
+  const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  st(`Salvando ${(blob.size / 1048576).toFixed(1)} MB… (render em ${((performance.now() - t0) / 1000).toFixed(0)} s)`);
+  const r = await fetch('/api/video/save?nome=jarvis-passo-a-passo-3d', { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: blob }).then((x) => x.json());
+  window.__saved = r;
+  st(r.ok ? `✓ Vídeo salvo: ${r.file} (${r.mb} MB · ${frames} quadros a ${FPS} fps)` : 'Falhou ao salvar.');
+}
+document.getElementById('exp').onclick = () => exportVideo();
+document.getElementById('prev').onclick = () => play(false);
+document.getElementById('rec').onclick = () => play(true);
+load().then(() => frame(0)).catch((e) => st('Aguardando: ' + e.message));
+</script>
+</body>
+</html>
